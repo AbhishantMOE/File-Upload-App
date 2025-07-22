@@ -14,6 +14,7 @@ function App() {
       setCurrentUser({
         id: canvasData.userId,
         conversation_id: canvasData.conversationId,
+        admin_id: canvasData.adminId,
       });
     } else if (canvasData.isReady && !canvasData.isCanvas) {
       // Regular Intercom integration for standalone mode
@@ -24,12 +25,20 @@ function App() {
     }
   }, [canvasData]);
 
+  // Add canvas-mode class when in canvas
+  const appClasses = `app ${canvasData.isCanvas ? "canvas-mode" : ""}`;
+
   return (
-    <div className="app">
+    <div className={appClasses}>
       {/* Canvas indicator */}
       {canvasData.isCanvas && (
         <div className="canvas-indicator">
-          <small>🔗 Connected to conversation</small>
+          🔗 Connected to conversation
+          {canvasData.conversationId && (
+            <div style={{ fontSize: "10px", marginTop: "2px", opacity: 0.8 }}>
+              ID: {canvasData.conversationId.substring(0, 8)}...
+            </div>
+          )}
         </div>
       )}
 
@@ -43,6 +52,7 @@ function App() {
           isIntercomReady={canvasData.isReady}
           currentUser={currentUser}
           canvasData={canvasData}
+          isCanvas={canvasData.isCanvas}
         />
       </div>
 
@@ -55,19 +65,7 @@ function App() {
 
       {/* Debug info in development */}
       {process.env.NODE_ENV === "development" && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 10,
-            left: 10,
-            background: "#333",
-            color: "white",
-            padding: 10,
-            borderRadius: 4,
-            fontSize: 12,
-            maxWidth: 300,
-          }}
-        >
+        <div className="debug-info">
           <strong>Debug Info:</strong>
           <br />
           Canvas: {canvasData.isCanvas ? "Yes" : "No"}
@@ -75,6 +73,16 @@ function App() {
           Conversation: {canvasData.conversationId || "None"}
           <br />
           User: {canvasData.userId || "None"}
+          <br />
+          Admin: {canvasData.adminId || "None"}
+          <br />
+          Window Width:{" "}
+          {typeof window !== "undefined" ? window.innerWidth : "Unknown"}px
+          <br />
+          URL:{" "}
+          {typeof window !== "undefined"
+            ? window.location.href.substring(0, 50) + "..."
+            : "Unknown"}
         </div>
       )}
     </div>

@@ -5,44 +5,48 @@ import UploadProgress from "./UploadProgress";
 import { uploadService } from "../services/uploadService";
 import { intercomService } from "../services/intercomService";
 
-const FileUpload = ({ isIntercomReady, currentUser }) => {
+const FileUpload = ({ isIntercomReady, currentUser, canvasData, isCanvas }) => {
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
   const [uploadResults, setUploadResults] = useState(null);
 
-  const onDrop = useCallback((acceptedFiles) => {
-    // Validate files
-    const { validFiles, errors } = uploadService.validateFiles(
-      acceptedFiles,
-      50 * 1024 * 1024, // 50MB max
-      [
-        "image/jpeg",
-        "image/png",
-        "image/gif",
-        "application/pdf",
-        "text/plain",
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      ] // Allowed types
-    );
+  const onDrop = useCallback(
+    (acceptedFiles) => {
+      // Validate files
+      const { validFiles, errors } = uploadService.validateFiles(
+        acceptedFiles,
+        50 * 1024 * 1024, // 50MB max
+        [
+          "image/jpeg",
+          "image/png",
+          "image/gif",
+          "application/pdf",
+          "text/plain",
+          "application/msword",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ] // Allowed types
+      );
 
-    if (errors.length > 0) {
-      alert("Some files were rejected:\n" + errors.join("\n"));
-    }
+      if (errors.length > 0) {
+        alert("Some files were rejected:\n" + errors.join("\n"));
+      }
 
-    if (validFiles.length > 0) {
-      // Add new files to existing ones
-      setFiles((prevFiles) => [...prevFiles, ...validFiles]);
-      setUploadResults(null);
+      if (validFiles.length > 0) {
+        // Add new files to existing ones
+        setFiles((prevFiles) => [...prevFiles, ...validFiles]);
+        setUploadResults(null);
 
-      // Track file selection
-      intercomService.trackFileUpload("files-selected", {
-        count: validFiles.length,
-        totalSize: validFiles.reduce((sum, file) => sum + file.size, 0),
-      });
-    }
-  }, []);
+        // Track file selection
+        intercomService.trackFileUpload("files-selected", {
+          count: validFiles.length,
+          totalSize: validFiles.reduce((sum, file) => sum + file.size, 0),
+          isCanvas: isCanvas,
+        });
+      }
+    },
+    [isCanvas]
+  );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -65,11 +69,13 @@ const FileUpload = ({ isIntercomReady, currentUser }) => {
     intercomService.trackFileUpload("upload-started", {
       fileCount: files.length,
       totalSize: files.reduce((sum, file) => sum + file.size, 0),
+      isCanvas: isCanvas,
+      conversationId: canvasData.conversationId,
     });
 
     try {
-      const folder = `intercom-uploads/${
-        currentUser?.id || "anonymous"
+      const folder = `intercom-uploads/${currentUser?.id || "anonymous"}/${
+        canvasData.conversationId || "no-conv"
       }/${Date.now()}/`;
 
       const result = await uploadService.uploadMultipleFiles(
@@ -84,32 +90,70 @@ const FileUpload = ({ isIntercomReady, currentUser }) => {
 
       if (result.success) {
         // Send success message to Intercom
-        const message = `Successfully uploaded ${
+        const message = `✅ Successfully uploaded ${
           result.summary.successful
         } out of ${
           result.summary.total
         } files. Total size: ${uploadService.formatFileSize(
           result.summary.totalSize
         )}`;
+
+        if (isCanvas) {
+          // In canvas mode, we could send data back to parent
+          window.parent.postMessage(
+            {
+              type: "file-upload-success",
+              data: {
+                message: message,
+                summary: result.summary,
+                conversationId: canvasData.conversationId,
+              },
+            },
+            "*"
+          );
+        }
+
         intercomService.sendMessage(message, {
           uploadResults: result.summary,
+          isCanvas: isCanvas,
         });
 
         // Track successful upload
-        intercomService.trackFileUpload("upload-completed", result.summary);
+        intercomService.trackFileUpload("upload-completed", {
+          ...result.summary,
+          isCanvas: isCanvas,
+        });
 
         // Clear files after successful upload
         setFiles([]);
       } else {
         // Send error message to Intercom
-        intercomService.sendMessage(`Upload failed: ${result.error}`, {
+        const errorMessage = `❌ Upload failed: ${result.error}`;
+
+        if (isCanvas) {
+          window.parent.postMessage(
+            {
+              type: "file-upload-error",
+              data: {
+                message: errorMessage,
+                error: result.error,
+                conversationId: canvasData.conversationId,
+              },
+            },
+            "*"
+          );
+        }
+
+        intercomService.sendMessage(errorMessage, {
           error: result.error,
+          isCanvas: isCanvas,
         });
 
         // Track failed upload
         intercomService.trackFileUpload("upload-failed", {
           error: result.error,
           fileCount: files.length,
+          isCanvas: isCanvas,
         });
       }
     } catch (error) {
@@ -121,7 +165,23 @@ const FileUpload = ({ isIntercomReady, currentUser }) => {
       });
 
       // Send error message to Intercom
-      intercomService.sendMessage(`Upload error: ${error.message}`);
+      const errorMessage = `❌ Upload error: ${error.message}`;
+
+      if (isCanvas) {
+        window.parent.postMessage(
+          {
+            type: "file-upload-error",
+            data: {
+              message: errorMessage,
+              error: error.message,
+              conversationId: canvasData.conversationId,
+            },
+          },
+          "*"
+        );
+      }
+
+      intercomService.sendMessage(errorMessage);
     } finally {
       setUploading(false);
       setUploadProgress(null);
@@ -150,9 +210,11 @@ const FileUpload = ({ isIntercomReady, currentUser }) => {
           ) : (
             <div>
               <p>Drag & drop files here, or click to select files</p>
-              <p style={{ fontSize: "12px", color: "#666" }}>
-                Supported: Images, PDF, Documents (Max 50MB each)
-              </p>
+              {!isCanvas && (
+                <p style={{ fontSize: "12px", color: "#666" }}>
+                  Supported: Images, PDF, Documents (Max 50MB each)
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -215,14 +277,7 @@ const FileUpload = ({ isIntercomReady, currentUser }) => {
       )}
 
       {/* Action Buttons */}
-      <div
-        style={{
-          marginTop: "20px",
-          display: "flex",
-          gap: "10px",
-          justifyContent: "center",
-        }}
-      >
+      <div className="upload-actions">
         <button
           className="btn btn-primary"
           onClick={handleUpload}
@@ -244,10 +299,17 @@ const FileUpload = ({ isIntercomReady, currentUser }) => {
         )}
       </div>
 
-      {/* Intercom Status */}
-      {!isIntercomReady && (
-        <div style={{ marginTop: "20px", textAlign: "center", color: "#666" }}>
-          <small>Connecting to support system...</small>
+      {/* Canvas connection status */}
+      {isCanvas && !isIntercomReady && (
+        <div
+          style={{
+            marginTop: "15px",
+            textAlign: "center",
+            color: "#666",
+            fontSize: "12px",
+          }}
+        >
+          <small>Connecting to conversation...</small>
         </div>
       )}
     </div>

@@ -42,8 +42,8 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({
         canvas: {
           content_url: canvasUrl,
-          height: 600,
-          width: 400,
+          height: 500,
+          width: 350,
         },
       }),
     };
