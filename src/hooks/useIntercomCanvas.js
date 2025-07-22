@@ -10,14 +10,14 @@ export const useIntercomCanvas = () => {
   });
 
   useEffect(() => {
-    // Check if we're in a canvas (has query parameters or is in iframe)
     const urlParams = new URLSearchParams(window.location.search);
     const conversationId = urlParams.get("conversation_id");
     const userId = urlParams.get("user_id");
     const adminId = urlParams.get("admin_id");
     const isInIframe = window.parent !== window;
+    const debugMode = urlParams.get("debug") === "intercom";
 
-    const isCanvas = !!(conversationId || userId || isInIframe);
+    const isCanvas = !!(conversationId || userId || isInIframe || debugMode);
 
     setCanvasData({
       conversationId,
@@ -27,13 +27,27 @@ export const useIntercomCanvas = () => {
       isReady: true,
     });
 
-    console.log("Canvas context:", {
+    // Log canvas detection
+    console.log("🎨 Canvas detection:", {
       conversationId,
       userId,
       adminId,
       isCanvas,
+      isInIframe,
+      debugMode,
       url: window.location.href,
     });
+
+    // Notify parent if in canvas
+    if (isCanvas) {
+      window.parent.postMessage(
+        {
+          type: "canvas_initialized",
+          data: { conversationId, userId, adminId },
+        },
+        "*"
+      );
+    }
   }, []);
 
   return canvasData;

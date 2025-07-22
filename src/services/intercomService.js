@@ -1,104 +1,125 @@
 class IntercomService {
   constructor() {
-    this.isReady = false;
-    this.init();
+    this.isCanvas = this.detectCanvasMode();
+    this.isReady = true; // Always ready for canvas mode
+    console.log("IntercomService initialized - Canvas mode:", this.isCanvas);
   }
 
-  init() {
-    // Wait for Intercom to be available
-    const checkIntercom = () => {
-      if (window.Intercom) {
-        this.isReady = true;
-        this.setupEventListeners();
-      } else {
-        setTimeout(checkIntercom, 100);
-      }
-    };
-    checkIntercom();
+  detectCanvasMode() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return !!(
+      urlParams.get("conversation_id") ||
+      urlParams.get("user_id") ||
+      window.parent !== window ||
+      urlParams.get("debug") === "intercom"
+    );
   }
 
-  setupEventListeners() {
-    if (!window.Intercom) return;
-
-    // Listen for messenger events
-    window.Intercom("onShow", () => {
-      console.log("Intercom messenger shown");
-    });
-
-    window.Intercom("onHide", () => {
-      console.log("Intercom messenger hidden");
-    });
-  }
-
-  // Send message to Intercom
+  // Send message to parent Intercom frame
   sendMessage(message, metadata = {}) {
-    if (!this.isReady) {
-      console.warn("Intercom not ready");
-      return false;
-    }
-
     try {
-      window.Intercom("trackEvent", "file-upload-message", {
-        message: message,
-        timestamp: Date.now(),
-        ...metadata,
-      });
-
-      // You can also show a message in the messenger
-      window.Intercom("showNewMessage", message);
-      return true;
+      if (this.isCanvas) {
+        // Send to parent Intercom frame
+        window.parent.postMessage(
+          {
+            type: "intercom_canvas_message",
+            data: {
+              message: message,
+              metadata: metadata,
+              timestamp: Date.now(),
+            },
+          },
+          "*"
+        );
+        console.log("📤 Message sent to Intercom:", message);
+        return true;
+      } else {
+        // Standalone mode - just log
+        console.log("📝 Standalone message:", message);
+        return true;
+      }
     } catch (error) {
-      console.error("Error sending message to Intercom:", error);
+      console.error("❌ Error sending message:", error);
       return false;
     }
   }
 
   // Track file upload events
   trackFileUpload(eventType, data = {}) {
-    if (!this.isReady) return;
-
     try {
-      window.Intercom("trackEvent", `file-upload-${eventType}`, {
-        timestamp: Date.now(),
-        ...data,
-      });
+      const eventData = {
+        event: `file_upload_${eventType}`,
+        properties: {
+          timestamp: Date.now(),
+          is_canvas: this.isCanvas,
+          ...data,
+        },
+      };
+
+      if (this.isCanvas) {
+        window.parent.postMessage(
+          {
+            type: "intercom_canvas_event",
+            data: eventData,
+          },
+          "*"
+        );
+      }
+
+      console.log("📊 Event tracked:", eventData);
     } catch (error) {
-      console.error("Error tracking event:", error);
+      console.error("❌ Error tracking event:", error);
     }
   }
 
-  // Get current user info
+  // Get user info from URL params (canvas mode)
   getCurrentUser() {
-    return new Promise((resolve, reject) => {
-      if (!this.isReady) {
-        reject(new Error("Intercom not ready"));
-        return;
-      }
+    return new Promise((resolve) => {
+      const urlParams = new URLSearchParams(window.location.search);
 
-      try {
-        // This is a simplified example - actual implementation depends on your setup
-        const userInfo = {
-          id: "current_user",
-          email: "user@example.com",
-        };
-        resolve(userInfo);
-      } catch (error) {
-        reject(error);
-      }
+      const userInfo = {
+        id: urlParams.get("user_id") || "anonymous",
+        conversation_id: urlParams.get("conversation_id"),
+        admin_id: urlParams.get("admin_id"),
+        is_canvas: this.isCanvas,
+      };
+
+      console.log("👤 Current user:", userInfo);
+      resolve(userInfo);
     });
   }
 
-  // Show messenger
-  show() {
-    if (this.isReady && window.Intercom) {
-      window.Intercom("show");
+  // Notify parent that canvas is ready
+  notifyCanvasReady() {
+    if (this.isCanvas) {
+      setTimeout(() => {
+        window.parent.postMessage(
+          {
+            type: "intercom_canvas_ready",
+            data: {
+              ready: true,
+              url: window.location.href,
+              timestamp: Date.now(),
+            },
+          },
+          "*"
+        );
+        console.log("✅ Canvas ready notification sent");
+      }, 500);
     }
   }
 
-  // Hide messenger
-  hide() {
-    if (this.isReady && window.Intercom) {
-      window.Intercom("hide");
+  // Resize canvas height
+  resizeCanvas(height) {
+    if (this.isCanvas) {
+      window.parent.postMessage(
+        {
+          type: "intercom_canvas_resize",
+          data: { height: Math.max(height, 400) },
+        },
+        "*"
+      );
+      console.log("📐 Canvas resize requested:", height);
     }
   }
 }

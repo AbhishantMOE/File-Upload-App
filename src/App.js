@@ -9,23 +9,21 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
-    // If we have user ID from canvas, use it
-    if (canvasData.userId) {
-      setCurrentUser({
-        id: canvasData.userId,
-        conversation_id: canvasData.conversationId,
-        admin_id: canvasData.adminId,
-      });
-    } else if (canvasData.isReady && !canvasData.isCanvas) {
-      // Regular Intercom integration for standalone mode
-      intercomService
-        .getCurrentUser()
-        .then((user) => setCurrentUser(user))
-        .catch(console.error);
+    // Get current user info
+    intercomService
+      .getCurrentUser()
+      .then((user) => {
+        setCurrentUser(user);
+        console.log("👤 User set:", user);
+      })
+      .catch(console.error);
+
+    // Notify canvas ready
+    if (canvasData.isCanvas && canvasData.isReady) {
+      intercomService.notifyCanvasReady();
     }
   }, [canvasData]);
 
-  // Add canvas-mode class when in canvas
   const appClasses = `app ${canvasData.isCanvas ? "canvas-mode" : ""}`;
 
   return (
@@ -56,13 +54,6 @@ function App() {
         />
       </div>
 
-      {!canvasData.isReady && (
-        <div className="intercom-status">
-          <div className="loading-spinner"></div>
-          <p>Loading...</p>
-        </div>
-      )}
-
       {/* Debug info in development */}
       {process.env.NODE_ENV === "development" && (
         <div className="debug-info">
@@ -76,13 +67,9 @@ function App() {
           <br />
           Admin: {canvasData.adminId || "None"}
           <br />
-          Window Width:{" "}
-          {typeof window !== "undefined" ? window.innerWidth : "Unknown"}px
+          Window Width: {window.innerWidth}px
           <br />
-          URL:{" "}
-          {typeof window !== "undefined"
-            ? window.location.href.substring(0, 50) + "..."
-            : "Unknown"}
+          Ready: {canvasData.isReady ? "Yes" : "No"}
         </div>
       )}
     </div>
